@@ -1,0 +1,117 @@
+<body>
+
+<script src="Recoder.js"></script>
+<script src="Voice.js"></script>
+<script src="Pipe.js"></script>
+
+<script>
+const player = new AudioPlayer();
+const pipe = new Pipe();
+
+
+
+const mediaSource = new MediaSource();
+const audioElement = document.createElement('audio');
+audioElement.src = URL.createObjectURL(mediaSource);
+document.body.appendChild(audioElement);
+
+let sourceBuffer;
+
+mediaSource.addEventListener('sourceopen', () => {
+    sourceBuffer = mediaSource.addSourceBuffer('audio/webm; codecs="opus"');
+    console.log("MediaSource otwarte, gotowe do dodawania fragmentów.");
+    let totalBytesBuffered = 0;
+
+    function monitorBufferedData() {
+        let buffered = sourceBuffer.buffered;
+        
+        for (let i = 0; i < buffered.length; i++) {
+            let start = buffered.start(i);
+            let end = buffered.end(i);
+            console.log(`Buffered range: ${start} - ${end} seconds`);
+            
+            let duration = end - start;
+            let estimatedBytes = duration * 96000;
+            totalBytesBuffered += estimatedBytes;
+            console.log(`Estimated size of buffered range: ${estimatedBytes} bytes`);
+        }
+
+        console.log(`Total buffered size: ${totalBytesBuffered} bytes`);
+    }
+
+    setInterval(monitorBufferedData, 500);
+});
+
+function addAudioFragment(fragment) {
+    if (!sourceBuffer.updating) {
+        sourceBuffer.appendBuffer(fragment);
+    } else {
+        sourceBuffer.addEventListener('updateend', () => {
+            sourceBuffer.appendBuffer(fragment);
+        }, { once: true });
+    }
+}
+
+
+function resetPlayback() {
+    audioElement.currentTime = 0;
+
+    audioElement.play()
+        .then(() => {
+            console.log("Odtwarzanie rozpoczęte od początku");
+        })
+        .catch(err => {
+            console.error("Błąd przy odtwarzaniu:", err);
+        });
+}
+
+
+(async () => {
+    const sendDataToServer = async (audioChunk) => {
+        console.log("Przesyłanie danych audio:", audioChunk)
+
+        const arrayBuffer = await new Promise((resolve, reject) => {
+            const reader = new FileReader()
+            reader.onloadend = () => resolve(reader.result)
+            reader.onerror = (error) => reject(error)
+            reader.readAsArrayBuffer(audioChunk)
+        });
+
+        try {
+            transformArrayBuffer = pipe.transform(arrayBuffer)
+            untransformArrayBuffer = pipe.untransform(transformArrayBuffer)            
+
+            if (!(untransformArrayBuffer instanceof ArrayBuffer)) {
+                console.error("Błąd: Przekazany obiekt nie jest ArrayBuffer!")
+                throw new Error("Zakończono działanie z powodu błędu typu danych.")
+            }else{
+                console.log("Ok!!!");
+            }
+
+            console.log(transformArrayBuffer)
+            console.log(untransformArrayBuffer)
+
+            //player.addToQueue(untransformArrayBuffer)
+
+            addAudioFragment(untransformArrayBuffer)
+            
+            console.log("Dane audio zostały wysłane.")
+
+        } catch (error) {
+            console.error("Błąd podczas wysyłania danych:", error)
+        }
+    };
+
+    const audioStreamer = new Recoder(sendDataToServer)
+    await audioStreamer.start()
+
+    console.log("Rozpoczęto nagrywanie")
+
+    setTimeout(async () => {
+        await audioStreamer.stop()
+        console.log("Nagrywanie zakończone")
+        resetPlayback()
+    }, 5000)
+})();
+</script>
+</body>
